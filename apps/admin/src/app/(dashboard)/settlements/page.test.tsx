@@ -39,6 +39,7 @@ jest.mock('@/lib/api/financeApi', () => ({
     markAmbiguous: jest.fn(),
     markPaymentPending: jest.fn(),
     cancel: jest.fn(),
+    revokeApproval: jest.fn(),
   },
 }));
 
@@ -171,9 +172,7 @@ describe('AdminSettlementsPage', () => {
    * worse than letting the server answer.
    */
   it('lets the server decide when the maker is unknown', async () => {
-    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
-      fixture({ createdByUserId: null }),
-    ]);
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([fixture({ createdByUserId: null })]);
     renderPage();
     expect(await screen.findByRole('button', { name: /approve/i })).toBeTruthy();
   });
@@ -223,7 +222,11 @@ describe('AdminSettlementsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^draft$/i }));
 
     await waitFor(() =>
-      expect(settlementAdminApi.draft).toHaveBeenCalledWith('partner-1', '2026-09-01', '2026-09-30'),
+      expect(settlementAdminApi.draft).toHaveBeenCalledWith(
+        'partner-1',
+        '2026-09-01',
+        '2026-09-30',
+      ),
     );
   });
 
@@ -264,6 +267,35 @@ describe('AdminSettlementsPage', () => {
         'settlement-1',
         'MONEY_MOVED',
         'Bank statement line 42 shows the transfer',
+      ),
+    );
+  });
+
+  /**
+   * An approved settlement cannot be cancelled (the server refuses); before a
+   * transfer starts it can have its approval revoked and be redrafted.
+   */
+  it('offers revoking an approval, with a reason, instead of a cancel the server refuses', async () => {
+    (settlementAdminApi.list as jest.Mock).mockResolvedValue([
+      fixture({ status: PartnerSettlementStatus.APPROVED }),
+    ]);
+    (settlementAdminApi.revokeApproval as jest.Mock).mockResolvedValue({
+      revoked: fixture({ status: PartnerSettlementStatus.CANCELLED }),
+      redraft: fixture({ status: PartnerSettlementStatus.DRAFT }),
+      redraftSkipped: null,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /revoke approval/i }));
+    expect(screen.queryByRole('button', { name: /^cancel$/i })).toBeNull();
+    fireEvent.change(screen.getByLabelText(/why/i), {
+      target: { value: 'Dispute decided for the customer' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /revoke approval/i }).pop()!);
+
+    await waitFor(() =>
+      expect(settlementAdminApi.revokeApproval).toHaveBeenCalledWith(
+        'settlement-1',
+        'Dispute decided for the customer',
       ),
     );
   });

@@ -320,6 +320,205 @@ describe('Partner Commerce — settlement through PartnerSettlementService (inte
     await assertExplained(setup.partner.id);
   });
 
+  // ── 8c-8h: a dispute after approval (docs/PARTNER_COMMERCE.md §14) ──────────
+
+  /** One 30000 money order, drafted, made ready and approved: 28500 committed. */
+  async function approvedSettlement() {
+    const setup = await partnerSetup();
+    const customer = await s.customer('50000');
+    const order = await complete(setup, customer.user.id, { money: '30000' }, '30000');
+    const draft = await draftCurrentPeriod(setup.partner.id);
+    await engine.markReady(draft.id, { actorId: maker, documentNumber: 'ФАКТУРА' });
+    const approved = await engine.approve(draft.id, checker);
+    expect(approved.status).toBe('APPROVED');
+    expect(approved.netPayableAmount.toFixed(4)).toBe('28500.0000');
+    return { setup, customer, order, settlement: approved };
+  }
+
+  const refused = (error: string) => expect.objectContaining({ response: expect.objectContaining({ error }) });
+  const paidPostings = (settlementId: string) =>
+    prisma.ledgerTransaction.count({ where: { kind: 'partner.settlement.paid', sourceType: 'PartnerSettlement', sourceId: settlementId } });
+  const openOrderDispute = (orderId: string, customerId: string) =>
+    disputes.open({ orderId, type: 'ORDER', reason: 'damaged', actorId: customerId, actorType: 'CUSTOMER' });
+
+  it('8c: a dispute opened after approval blocks PAID — nothing posted, status unchanged', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    // The credit was committed, so nothing was frozen: the settlement still claims all of it.
+    expect(dispute.openedAfterSettlement).toBe(true);
+    expect(dispute.holdLedgerTransactionId).toBeNull();
+
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8C' })).rejects.toEqual(
+      refused('OPEN_DISPUTE_NOT_IN_SETTLEMENT'),
+    );
+    // Nor may a transfer be started for it.
+    await expect(engine.markPaymentPending(settlement.id, checker)).rejects.toEqual(refused('OPEN_DISPUTE_NOT_IN_SETTLEMENT'));
+    expect(await paidPostings(settlement.id)).toBe(0);
+    const after = await prisma.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
+    expect(after.status).toBe('APPROVED');
+    expect(after.bankTransferReference).toBeNull();
+    expect(await prisma.partnerSettlementTransferAttempt.count({ where: { settlementId: settlement.id } })).toBe(0);
+    await assertExplained(setup.partner.id);
+  });
+
+  it('8d: the partner wins — the approved settlement is paid as it is, no redraft', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_PARTNER', note: 'goods were fine' });
+
+    const paid = await engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8D' });
+    expect(paid.status).toBe('PAID');
+    expect(paid.netPayableAmount.toFixed(4)).toBe('28500.0000');
+    expect(await paidPostings(settlement.id)).toBe(1);
+    expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
+    await assertExplained(setup.partner.id);
+  });
+
+  it.each([
+    // [outcome, refund, redraft net = 28500 − refund + 5% commission on the refund]
+    ['RESOLVED_CUSTOMER', '12000', '17100.0000'],
+    ['RESOLVED_SPLIT', '6000', '22800.0000'],
+  ] as const)(
+    '8e: %s before any transfer — the stale 28500 is not paid; revoke releases the claims and the redraft nets the refund',
+    async (outcome, refund, redraftNet) => {
+      const { setup, customer, order, settlement } = await approvedSettlement();
+      const dispute = await openOrderDispute(order.id, customer.user.id);
+      await disputes.resolve(dispute.id, setup.admin.id, { outcome, customerRefundAmount: refund, note: 'damaged on arrival' });
+
+      await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8E' })).rejects.toEqual(
+        refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'),
+      );
+      await expect(engine.markPaymentPending(settlement.id, checker)).rejects.toEqual(refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'));
+      expect(await paidPostings(settlement.id)).toBe(0);
+      // An approved settlement is not cancellable; its approval is revocable.
+      await expect(engine.cancel(settlement.id, { actorId: maker, reason: 'x' })).rejects.toThrow(/draft or ready/);
+
+      const claimedBefore = (await prisma.partnerSettlementEntry.findMany({ where: { settlementId: settlement.id } })).map((e) => e.ledgerPostingId);
+      const result = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+      expect(result.revoked.status).toBe('CANCELLED');
+      expect(result.revoked.approvedByUserId).toBe(checker); // the approval stays as history
+      expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(0);
+
+      const redraft = result.redraft!;
+      expect(redraft.status).toBe('DRAFT');
+      expect(redraft.netPayableAmount.toFixed(4)).toBe(redraftNet);
+      const redrafted = await prisma.partnerSettlementEntry.findMany({ where: { settlementId: redraft.id } });
+      // The released claims are claimed again, once, together with the refund.
+      expect(redrafted.map((e) => e.ledgerPostingId)).toEqual(expect.arrayContaining(claimedBefore));
+      expect(await kindsOf(redraft.id)).toEqual(
+        expect.arrayContaining([
+          'partner_order.completion:CREDIT:30000',
+          'partner.contribution:DEBIT:1500',
+          `partner_order.return_money:DEBIT:${Number(refund)}`,
+          `partner.contribution_refund:CREDIT:${Number(refund) / 20}`,
+        ]),
+      );
+      await assertExplained(setup.partner.id);
+
+      const paid = await pay(redraft.id);
+      expect(paid.status).toBe('PAID');
+      expect(paid.netPayableAmount.toFixed(4)).toBe(redraftNet);
+      expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
+      await assertExplained(setup.partner.id);
+    },
+  );
+
+  it('8f: PAYMENT_PENDING and the customer wins — no revoke, no cancel; the transfer finishes and the refund is next period\'s debt', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    await engine.markPaymentPending(settlement.id, checker);
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    // Still OPEN: not recorded as paid, whatever the bank does.
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8F' })).rejects.toEqual(
+      refused('OPEN_DISPUTE_NOT_IN_SETTLEMENT'),
+    );
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+
+    await expect(engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute' })).rejects.toEqual(refused('TRANSFER_MAY_HAVE_STARTED'));
+    await expect(engine.cancel(settlement.id, { actorId: maker, reason: 'dispute' })).rejects.toThrow(/draft or ready/);
+    expect(await prisma.partnerSettlementEntry.count({ where: { settlementId: settlement.id } })).toBe(4 - 2); // completion + contribution, still claimed
+
+    // The bank confirms the transfer went: the existing lifecycle records it.
+    const paid = await engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8F' });
+    expect(paid.status).toBe('PAID');
+    expect(paid.netPayableAmount.toFixed(4)).toBe('28500.0000');
+    // The refund (12000 − 600 commission back) is the partner's debt, unclaimed.
+    const debt = await assertExplained(setup.partner.id);
+    expect(debt.net.toFixed(4)).toBe('-11400.0000');
+    await expect(draftCurrentPeriod(setup.partner.id)).rejects.toThrow(/Nothing to pay/);
+
+    // Netted by the next settlement: 40000 − 2000 − 11400.
+    const other = await s.customer('50000');
+    await complete(setup, other.user.id, { money: '40000' }, '40000');
+    const next = await draftCurrentPeriod(setup.partner.id);
+    expect(next.netPayableAmount.toFixed(4)).toBe('26600.0000');
+    await assertExplained(setup.partner.id);
+  });
+
+  it('8g: REQUIRES_RECONCILIATION — claims stay; no new draft can take the same postings', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    await engine.markPaymentPending(settlement.id, checker);
+    await engine.markRequiresReconciliation(settlement.id, { actorId: checker, reason: 'bank timeout' });
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+
+    await expect(engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute' })).rejects.toEqual(refused('TRANSFER_MAY_HAVE_STARTED'));
+    const claimed = (await prisma.partnerSettlementEntry.findMany({ where: { settlementId: settlement.id } })).map((e) => e.ledgerPostingId);
+    expect(claimed).toHaveLength(2);
+    // Only the refund is unclaimed — a negative net, so nothing to draft.
+    const unsettled = await engine.unsettled(setup.partner.id);
+    expect(unsettled.entries.map((e) => e.ledgerPostingId).filter((id) => claimed.includes(id))).toEqual([]);
+    await expect(draftCurrentPeriod(setup.partner.id)).rejects.toThrow(/Nothing to pay/);
+
+    // Even with new earnings, a new draft claims only new postings.
+    const other = await s.customer('50000');
+    await complete(setup, other.user.id, { money: '40000' }, '40000');
+    const next = await draftCurrentPeriod(setup.partner.id);
+    const nextClaims = (await prisma.partnerSettlementEntry.findMany({ where: { settlementId: next.id } })).map((e) => e.ledgerPostingId);
+    expect(nextClaims.filter((id) => claimed.includes(id))).toEqual([]);
+    expect(next.netPayableAmount.toFixed(4)).toBe('26600.0000');
+    await expect(
+      prisma.partnerSettlementEntry.create({
+        data: { settlementId: next.id, ledgerPostingId: claimed[0]!, partnerId: setup.partner.id, amount: 1, direction: 'CREDIT', kind: 'x', sourceType: 'x', sourceId: 'x', occurredAt: new Date() },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' }); // one posting, one claim — the database says so
+
+    // Reconciliation, not a redraft, closes the ambiguous one.
+    await engine.proposeReconciliationOutcome(settlement.id, { actorId: maker, outcome: 'MONEY_MOVED', evidence: 'statement line 7', bankTransferReference: 'BANK-8G' });
+    const paid = await engine.confirmReconciliationOutcome(settlement.id, { actorId: checker });
+    expect(paid.status).toBe('PAID');
+    expect(paid.netPayableAmount.toFixed(4)).toBe('28500.0000');
+    await assertExplained(setup.partner.id);
+  });
+
+  it('8h: decided for the customer before the transfer — what the partner is actually paid is the current net, not the stale figure', async () => {
+    const { setup, customer, order, settlement } = await approvedSettlement();
+    const dispute = await openOrderDispute(order.id, customer.user.id);
+    await disputes.resolve(dispute.id, setup.admin.id, { outcome: 'RESOLVED_CUSTOMER', customerRefundAmount: '12000', note: 'damaged' });
+    // The approved 28500 cannot be recorded as paid...
+    await expect(engine.markPaid(settlement.id, { actorId: checker, bankTransferReference: 'BANK-8H' })).rejects.toEqual(
+      refused('DISPUTE_REFUND_NOT_IN_SETTLEMENT'),
+    );
+    // ...so the only way to pay is the redraft.
+    const { redraft } = await engine.revokeApproval(settlement.id, { actorId: maker, reason: 'dispute decided for the customer' });
+    await pay(redraft!.id);
+
+    const payouts = await prisma.partnerSettlement.findMany({ where: { partnerId: setup.partner.id, status: 'PAID' } });
+    const totalPaid = payouts.reduce((sum, p) => sum.plus(p.netPayableAmount), new Decimal(0));
+    // 30000 electronic − 1500 commission − 12000 refunded + 600 commission returned.
+    expect(totalPaid.toFixed(4)).toBe('17100.0000');
+    expect(totalPaid.toFixed(4)).not.toBe(settlement.netPayableAmount.toFixed(4));
+    // The bank posting is the same figure, and nothing is left owed either way.
+    const bankOut = await prisma.ledgerPosting.aggregate({
+      where: { transaction: { kind: 'partner.settlement.paid', sourceId: { in: payouts.map((p) => p.id) } }, direction: 'CREDIT' },
+      _sum: { amount: true },
+    });
+    expect(bankOut._sum.amount!.toFixed(4)).toBe('17100.0000');
+    expect((await owedToPartner(setup.partner.id)).toFixed(4)).toBe('0.0000');
+    // The customer has the 12000 back.
+    expect(await s.balance(A.CUSTOMER_PREPAID_BALANCE, { userId: customer.user.id })).toBe('-32000.0000');
+    await assertExplained(setup.partner.id);
+  });
+
   // ── 9: cancellation actual cost ────────────────────────────────────────────
 
   it('9: an approved actual cancellation cost is settled from the money part only', async () => {

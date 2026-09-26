@@ -247,95 +247,110 @@ export class PartnerSettlementService {
 
     return this.prisma.$transaction(async (tx) => {
       await lockPartnerForSettlement(tx, params.partnerId);
-      const partner = await tx.partner.findUnique({
-        where: { id: params.partnerId },
-        select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
-      });
-      if (!partner) throw new NotFoundException('Partner not found');
-      if (partner.payoutsBlockedAt) {
-        throw new ConflictException(
-          `Payouts are blocked for this partner: ${partner.payoutsBlockedReason ?? 'no reason recorded'}`,
-        );
-      }
-
-      const open = await tx.partnerSettlement.findFirst({
-        where: {
-          partnerId: params.partnerId,
-          status: {
-            in: [
-              PartnerSettlementStatus.DRAFT,
-              PartnerSettlementStatus.READY,
-              PartnerSettlementStatus.APPROVED,
-              PartnerSettlementStatus.PAYMENT_PENDING,
-            ],
-          },
-        },
-        select: { id: true, status: true },
-      });
-      if (open) {
-        throw new ConflictException(
-          `Settlement ${open.id} is still ${open.status}; finish or cancel it before starting another`,
-        );
-      }
-
-      const breakdown = await this.unsettled(params.partnerId, { until: params.periodEnd, tx });
-      if (breakdown.net.lessThanOrEqualTo(0)) {
-        throw new ConflictException(
-          `Nothing to pay: this partner's unsettled balance is ${breakdown.net.toFixed(2)}. ` +
-            'A non-positive balance is carried into the next period and offset against future earnings, ' +
-            'not settled.',
-        );
-      }
-
-      const settlement = await tx.partnerSettlement.create({
-        data: {
-          partnerId: params.partnerId,
-          periodStart: params.periodStart,
-          periodEnd: params.periodEnd,
-          status: PartnerSettlementStatus.DRAFT,
-          accruedAmount: breakdown.accrued,
-          deductionAmount: breakdown.deductions,
-          netPayableAmount: breakdown.net,
-          entryCount: breakdown.entries.length,
-          createdByUserId: params.actorId,
-        },
-      });
-
-      // One statement, so two concurrent drafts cannot interleave: the loser
-      // hits the unique index on `ledgerPostingId` and its whole transaction
-      // rolls back, settlement row included.
-      await tx.partnerSettlementEntry.createMany({
-        data: breakdown.entries.map((entry) => ({
-          settlementId: settlement.id,
-          ledgerPostingId: entry.ledgerPostingId,
-          partnerId: params.partnerId,
-          amount: entry.amount,
-          direction: entry.direction,
-          kind: entry.kind,
-          sourceType: entry.sourceType,
-          sourceId: entry.sourceId,
-          occurredAt: entry.occurredAt,
-        })),
-      });
-
-      await this.audit.record(
-        {
-          actorUserId: params.actorId,
-          action: AuditAction.PARTNER_UPDATED,
-          entityType: 'PartnerSettlement',
-          entityId: settlement.id,
-          metadata: {
-            event: 'settlement.draft_created',
-            partnerId: params.partnerId,
-            net: breakdown.net.toFixed(4),
-            entryCount: breakdown.entries.length,
-          },
-        },
-        tx,
-      );
-
-      return settlement;
+      const drafted = await this.draftInTx(tx, params);
+      if ('skipped' in drafted) throw new ConflictException(drafted.skipped);
+      return drafted.settlement;
     });
+  }
+
+  /**
+   * The body of `createDraft`, under a partner lock the caller holds. A
+   * refusal is returned, not thrown, so `revokeApproval` can release the old
+   * claims and still commit when there is nothing to redraft.
+   */
+  private async draftInTx(
+    tx: Tx,
+    params: { partnerId: string; periodStart: Date; periodEnd: Date; actorId: string },
+  ): Promise<{ settlement: Prisma.PartnerSettlementGetPayload<object> } | { skipped: string }> {
+    const partner = await tx.partner.findUnique({
+      where: { id: params.partnerId },
+      select: { id: true, payoutsBlockedAt: true, payoutsBlockedReason: true },
+    });
+    if (!partner) throw new NotFoundException('Partner not found');
+    if (partner.payoutsBlockedAt) {
+      return {
+        skipped: `Payouts are blocked for this partner: ${partner.payoutsBlockedReason ?? 'no reason recorded'}`,
+      };
+    }
+
+    const open = await tx.partnerSettlement.findFirst({
+      where: {
+        partnerId: params.partnerId,
+        status: {
+          in: [
+            PartnerSettlementStatus.DRAFT,
+            PartnerSettlementStatus.READY,
+            PartnerSettlementStatus.APPROVED,
+            PartnerSettlementStatus.PAYMENT_PENDING,
+          ],
+        },
+      },
+      select: { id: true, status: true },
+    });
+    if (open) {
+      return {
+        skipped: `Settlement ${open.id} is still ${open.status}; finish or cancel it before starting another`,
+      };
+    }
+
+    const breakdown = await this.unsettled(params.partnerId, { until: params.periodEnd, tx });
+    if (breakdown.net.lessThanOrEqualTo(0)) {
+      return {
+        skipped:
+          `Nothing to pay: this partner's unsettled balance is ${breakdown.net.toFixed(2)}. ` +
+          'A non-positive balance is carried into the next period and offset against future earnings, ' +
+          'not settled.',
+      };
+    }
+
+    const settlement = await tx.partnerSettlement.create({
+      data: {
+        partnerId: params.partnerId,
+        periodStart: params.periodStart,
+        periodEnd: params.periodEnd,
+        status: PartnerSettlementStatus.DRAFT,
+        accruedAmount: breakdown.accrued,
+        deductionAmount: breakdown.deductions,
+        netPayableAmount: breakdown.net,
+        entryCount: breakdown.entries.length,
+        createdByUserId: params.actorId,
+      },
+    });
+
+    // One statement, so two concurrent drafts cannot interleave: the loser
+    // hits the unique index on `ledgerPostingId` and its whole transaction
+    // rolls back, settlement row included.
+    await tx.partnerSettlementEntry.createMany({
+      data: breakdown.entries.map((entry) => ({
+        settlementId: settlement.id,
+        ledgerPostingId: entry.ledgerPostingId,
+        partnerId: params.partnerId,
+        amount: entry.amount,
+        direction: entry.direction,
+        kind: entry.kind,
+        sourceType: entry.sourceType,
+        sourceId: entry.sourceId,
+        occurredAt: entry.occurredAt,
+      })),
+    });
+
+    await this.audit.record(
+      {
+        actorUserId: params.actorId,
+        action: AuditAction.PARTNER_UPDATED,
+        entityType: 'PartnerSettlement',
+        entityId: settlement.id,
+        metadata: {
+          event: 'settlement.draft_created',
+          partnerId: params.partnerId,
+          net: breakdown.net.toFixed(4),
+          entryCount: breakdown.entries.length,
+        },
+      },
+      tx,
+    );
+
+    return { settlement };
   }
 
   /**
@@ -400,8 +415,14 @@ export class PartnerSettlementService {
           entityType: 'Partner',
           entityId: params.partnerId,
           metadata: {
-            from: { periodicity: partner.settlementPeriodicity, anchorDay: partner.settlementAnchorDay },
-            to: { periodicity: updated.settlementPeriodicity, anchorDay: updated.settlementAnchorDay },
+            from: {
+              periodicity: partner.settlementPeriodicity,
+              anchorDay: partner.settlementAnchorDay,
+            },
+            to: {
+              periodicity: updated.settlementPeriodicity,
+              anchorDay: updated.settlementAnchorDay,
+            },
           },
         },
         tx,
@@ -462,35 +483,17 @@ export class PartnerSettlementService {
       }
 
       /*
-       * A Partner Commerce dispute opened after this draft was cut froze part
-       * of an order credit the draft already claimed. Its hold posting is a
-       * deduction this draft does not contain, so approving would pay the
-       * disputed amount. Refused: cancel and redraft, and the new draft nets
-       * the credit against its hold (docs/PARTNER_COMMERCE.md §14). Under the
-       * same partner lock `OrderDisputesService.open` takes.
+       * A Partner Commerce dispute that changed an order credit this draft
+       * claimed, after it was cut: approving would pay money the partner may
+       * have to give back (docs/PARTNER_COMMERCE.md §14). Refused: cancel and
+       * draft again through now. Under the same partner lock
+       * `OrderDisputesService.open` takes.
        */
       await lockPartnerForSettlement(tx, settlement.partnerId);
-      const disputed = await tx.$queryRaw<{ orderId: string }[]>`
-        SELECT DISTINCT d."orderId"
-          FROM partner_settlement_entries e
-          JOIN order_disputes d
-            ON d."orderId" = e."sourceId" AND d.status = 'OPEN' AND d."holdLedgerTransactionId" IS NOT NULL
-         WHERE e."settlementId" = ${id}
-           AND e.kind = 'partner_order.completion'
-           AND e."sourceType" = 'PartnerOrder'
-           AND NOT EXISTS (
-             SELECT 1 FROM ledger_postings hp
-               JOIN partner_settlement_entries he ON he."ledgerPostingId" = hp.id
-              WHERE hp."transactionId" = d."holdLedgerTransactionId" AND he."settlementId" = ${id}
-           )`;
-      if (disputed.length > 0) {
-        throw new ConflictException({
-          message:
-            `An order in this settlement has an open dispute whose frozen amount is not in it ` +
-            `(${disputed.map((d) => d.orderId).join(', ')}). Cancel this settlement and draft it again.`,
-          error: 'OPEN_DISPUTE_NOT_IN_SETTLEMENT',
-        });
-      }
+      await this.assertNoDisputeBlockers(tx, id, {
+        refunds: true,
+        remedy: 'Cancel this settlement and draft it again through now.',
+      });
 
       const account = await tx.partnerBankAccount.findFirst({
         where: { partnerId: settlement.partnerId, isActive: true },
@@ -545,6 +548,9 @@ export class PartnerSettlementService {
       actorId,
       data: {},
       event: 'settlement.payment_pending',
+      // A transfer is not started for a figure a dispute has made wrong —
+      // the same guard as `markPaid`, one step earlier.
+      guard: (tx, settlement) => this.assertPayable(tx, settlement),
     });
   }
 
@@ -567,7 +573,166 @@ export class PartnerSettlementService {
       bankTransferReference: params.bankTransferReference,
       from: TRANSFER_ATTEMPTABLE,
       event: 'settlement.paid',
+      guard: (tx, settlement) => this.assertPayable(tx, settlement),
     });
+  }
+
+  /**
+   * The last look before money is recorded as moving, under the partner lock
+   * a dispute opens under (docs/PARTNER_COMMERCE.md §14):
+   *
+   * - an OPEN order dispute whose financial effect this settlement does not
+   *   contain → `OPEN_DISPUTE_NOT_IN_SETTLEMENT`, from any status: wait for
+   *   the decision. A partner-favourable decision simply lets this pass.
+   * - a customer-favourable decision whose refund this settlement does not
+   *   contain → `DISPUTE_REFUND_NOT_IN_SETTLEMENT`, but only while it is
+   *   provable that no transfer has started (APPROVED, no evidence): then the
+   *   stale figure is not paid — `revokeApproval` redrafts it. Once a transfer
+   *   may have started, the refund is ordinary partner debt, netted by the
+   *   next settlement, and this does not block.
+   */
+  private async assertPayable(tx: Tx, settlement: { id: string; partnerId: string }) {
+    await lockPartnerForSettlement(tx, settlement.partnerId);
+    // Re-read under the lock: the status decides which rule applies.
+    const current = await tx.partnerSettlement.findUniqueOrThrow({ where: { id: settlement.id } });
+    const beforeTransfer =
+      current.status === PartnerSettlementStatus.APPROVED &&
+      (await this.transferEvidence(tx, current)).length === 0;
+    await this.assertNoDisputeBlockers(tx, settlement.id, {
+      refunds: beforeTransfer,
+      remedy: 'Nothing was posted and the status is unchanged.',
+    });
+  }
+
+  /**
+   * Orders in this settlement whose dispute changed what the partner is owed
+   * after the settlement claimed the order's credit.
+   *
+   * - `open`: an OPEN order dispute whose hold this settlement does not
+   *   claim — the hold was posted after the draft, or none was posted because
+   *   the dispute opened after approval (`openedAfterSettlement`: the credit
+   *   was committed, so nothing was frozen).
+   * - `refunds`: a customer-favourable decision with a refund whose return is
+   *   not in this settlement — not written yet, waiting on the desk, or
+   *   posted to PARTNER_PAYABLE but not claimed here.
+   */
+  private async disputeBlockers(
+    tx: Tx,
+    settlementId: string,
+  ): Promise<{ open: string[]; refunds: string[] }> {
+    const open = await tx.$queryRaw<{ orderId: string }[]>`
+      SELECT DISTINCT d."orderId"
+        FROM partner_settlement_entries e
+        JOIN order_disputes d ON d."orderId" = e."sourceId" AND d.status = 'OPEN' AND d.type = 'ORDER'
+       WHERE e."settlementId" = ${settlementId}
+         AND e.kind = 'partner_order.completion'
+         AND e."sourceType" = 'PartnerOrder'
+         AND (
+           (d."holdLedgerTransactionId" IS NULL AND d."openedAfterSettlement")
+           OR (d."holdLedgerTransactionId" IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM ledger_postings hp
+               JOIN partner_settlement_entries he ON he."ledgerPostingId" = hp.id
+              WHERE hp."transactionId" = d."holdLedgerTransactionId" AND he."settlementId" = ${settlementId}
+           ))
+         )`;
+    const refunds = await tx.$queryRaw<{ orderId: string }[]>`
+      SELECT DISTINCT d."orderId"
+        FROM partner_settlement_entries e
+        JOIN order_disputes d
+          ON d."orderId" = e."sourceId"
+         AND d.status IN ('RESOLVED_CUSTOMER', 'RESOLVED_SPLIT')
+         AND d."customerRefundAmount" > 0
+       WHERE e."settlementId" = ${settlementId}
+         AND e.kind = 'partner_order.completion'
+         AND e."sourceType" = 'PartnerOrder'
+         AND (
+           NOT EXISTS (SELECT 1 FROM partner_order_returns r WHERE r."disputeId" = d.id)
+           OR EXISTS (
+             SELECT 1 FROM partner_order_returns r
+              WHERE r."disputeId" = d.id AND r.status IN ('AWAITING_SHORTFALL_SETTLEMENT', 'MANUAL_REVIEW')
+           )
+           OR EXISTS (
+             SELECT 1 FROM partner_order_returns r
+               JOIN ledger_transactions t ON t."sourceType" = 'PartnerOrderReturn' AND t."sourceId" = r.id
+               JOIN ledger_postings p ON p."transactionId" = t.id
+               JOIN ledger_accounts a ON a.id = p."accountId" AND a.type = 'PARTNER_PAYABLE' AND a."partnerId" = e."partnerId"
+              WHERE r."disputeId" = d.id
+                AND NOT EXISTS (
+                  SELECT 1 FROM partner_settlement_entries x
+                   WHERE x."ledgerPostingId" = p.id AND x."settlementId" = ${settlementId}
+                )
+           )
+         )`;
+    return { open: open.map((r) => r.orderId), refunds: refunds.map((r) => r.orderId) };
+  }
+
+  private async assertNoDisputeBlockers(
+    tx: Tx,
+    settlementId: string,
+    opts: { refunds: boolean; remedy: string },
+  ) {
+    const blockers = await this.disputeBlockers(tx, settlementId);
+    if (blockers.open.length > 0) {
+      throw new ConflictException({
+        message:
+          `An order in this settlement has an open dispute whose financial effect is not in it ` +
+          `(${blockers.open.join(', ')}). ${opts.remedy}`,
+        error: 'OPEN_DISPUTE_NOT_IN_SETTLEMENT',
+        orderIds: blockers.open,
+      });
+    }
+    if (opts.refunds && blockers.refunds.length > 0) {
+      throw new ConflictException({
+        message:
+          `A dispute on an order in this settlement was decided for the customer and its refund is not in it ` +
+          `(${blockers.refunds.join(', ')}); paying it would pay money the partner owes back. ${opts.remedy}`,
+        error: 'DISPUTE_REFUND_NOT_IN_SETTLEMENT',
+        orderIds: blockers.refunds,
+      });
+    }
+  }
+
+  /**
+   * Anything that says a transfer for this settlement may have started. Empty
+   * is the proof `revokeApproval` needs: no PAYMENT_PENDING ever recorded, no
+   * transfer attempt, no bank reference, no paid posting.
+   */
+  private async transferEvidence(
+    tx: Tx,
+    settlement: {
+      id: string;
+      bankTransferReference: string | null;
+      ledgerTransactionId: string | null;
+      paidAt: Date | null;
+    },
+  ): Promise<string[]> {
+    const evidence: string[] = [];
+    if (settlement.bankTransferReference) evidence.push('bank transfer reference');
+    if (settlement.ledgerTransactionId || settlement.paidAt) evidence.push('marked paid');
+    if (
+      (await tx.partnerSettlementTransferAttempt.count({
+        where: { settlementId: settlement.id },
+      })) > 0
+    ) {
+      evidence.push('transfer attempt');
+    }
+    const paidPostings = await tx.ledgerTransaction.count({
+      where: {
+        kind: SETTLEMENT_PAID_KIND,
+        sourceType: 'PartnerSettlement',
+        sourceId: settlement.id,
+      },
+    });
+    if (paidPostings > 0) evidence.push(`${SETTLEMENT_PAID_KIND} posting`);
+    const pending = await tx.auditLog.count({
+      where: {
+        entityType: 'PartnerSettlement',
+        entityId: settlement.id,
+        metadata: { path: ['event'], equals: 'settlement.payment_pending' },
+      },
+    });
+    if (pending > 0) evidence.push('PAYMENT_PENDING recorded');
+    return evidence;
   }
 
   /**
@@ -588,6 +753,8 @@ export class PartnerSettlementService {
       event: string;
       /** Extra columns to stamp on the same claim — a reconciliation's checker. */
       extra?: Prisma.PartnerSettlementUpdateManyMutationInput;
+      /** Runs before anything is posted; throwing leaves the settlement as it was. */
+      guard?: (tx: Tx, settlement: { id: string; partnerId: string }) => Promise<void>;
     },
   ) {
     const reference = params.bankTransferReference.trim();
@@ -603,6 +770,7 @@ export class PartnerSettlementService {
             : `Settlement is ${settlement.status}; expected one of ${params.from.join(', ')}`,
         );
       }
+      if (params.guard) await params.guard(tx, settlement);
 
       // Both on `tx`. A tx-less lookup here borrows a second pool connection
       // while this transaction holds one — the pattern that starved the pool
@@ -998,6 +1166,102 @@ export class PartnerSettlementService {
   }
 
   /**
+   * Takes back an approval before any money could have moved, and drafts the
+   * partner's settlement again from what the ledger says now.
+   *
+   * The case it exists for (docs/PARTNER_COMMERCE.md §14): a dispute decided
+   * for the customer after approval. Paying the approved figure would pay
+   * money the partner already owes back; redrafted, the new settlement nets
+   * the order's credit against the refund in one go.
+   *
+   * Allowed only on proof, re-checked under the partner lock: the settlement
+   * is APPROVED and `transferEvidence` finds nothing — no PAYMENT_PENDING ever
+   * recorded, no transfer attempt, no bank reference, no paid posting. From
+   * PAYMENT_PENDING, FAILED or REQUIRES_RECONCILIATION a transfer may have
+   * started, so the claims are never released: that settlement finishes
+   * through the transfer/reconciliation lifecycle and a refund is debt for
+   * the next one.
+   *
+   * The revoked settlement becomes CANCELLED (its approval stays on the row
+   * as history) and its claims are deleted, which the entries trigger allows
+   * once the status is no longer approved-or-later. The redraft runs
+   * `periodStart` → now so it includes the refund; when the partner's net is
+   * not positive there is no redraft — the balance carries, as always.
+   */
+  async revokeApproval(id: string, params: { actorId: string; reason: string }) {
+    const reason = params.reason.trim();
+    if (!reason) throw new BadRequestException('A reason is required');
+
+    return this.prisma.$transaction(async (tx) => {
+      const found = await tx.partnerSettlement.findUnique({
+        where: { id },
+        select: { partnerId: true },
+      });
+      if (!found) throw new NotFoundException('Settlement not found');
+      await lockPartnerForSettlement(tx, found.partnerId);
+      const settlement = await tx.partnerSettlement.findUniqueOrThrow({ where: { id } });
+
+      if (
+        settlement.status === PartnerSettlementStatus.DRAFT ||
+        settlement.status === PartnerSettlementStatus.READY
+      ) {
+        throw new ConflictException('Nothing is approved yet; cancel this settlement instead');
+      }
+      const evidence = await this.transferEvidence(tx, settlement);
+      if (settlement.status !== PartnerSettlementStatus.APPROVED || evidence.length > 0) {
+        throw new ConflictException({
+          message:
+            `Settlement is ${settlement.status}${evidence.length ? ` (${evidence.join(', ')})` : ''}: ` +
+            'a transfer may have started, so its claims stay. Finish it through the transfer or ' +
+            'reconciliation steps; a refund is then netted by the next settlement.',
+          error: 'TRANSFER_MAY_HAVE_STARTED',
+        });
+      }
+
+      const revoked = await tx.partnerSettlement.updateMany({
+        where: { id, status: PartnerSettlementStatus.APPROVED },
+        data: {
+          status: PartnerSettlementStatus.CANCELLED,
+          cancelledByUserId: params.actorId,
+          cancelledAt: new Date(),
+          cancelledReason: `approval revoked: ${reason}`,
+        },
+      });
+      if (revoked.count === 0) throw new ConflictException('Settlement changed while revoking');
+      const released = await tx.partnerSettlementEntry.deleteMany({ where: { settlementId: id } });
+
+      await this.audit.record(
+        {
+          actorUserId: params.actorId,
+          action: AuditAction.PARTNER_UPDATED,
+          entityType: 'PartnerSettlement',
+          entityId: id,
+          metadata: {
+            event: 'settlement.approval_revoked',
+            partnerId: settlement.partnerId,
+            amount: settlement.netPayableAmount.toFixed(4),
+            releasedEntries: released.count,
+            reason,
+          },
+        },
+        tx,
+      );
+
+      const redraft = await this.draftInTx(tx, {
+        partnerId: settlement.partnerId,
+        periodStart: settlement.periodStart,
+        periodEnd: new Date(Math.max(Date.now(), settlement.periodEnd.getTime())),
+        actorId: params.actorId,
+      });
+      return {
+        revoked: await tx.partnerSettlement.findUniqueOrThrow({ where: { id } }),
+        redraft: 'settlement' in redraft ? redraft.settlement : null,
+        redraftSkipped: 'skipped' in redraft ? redraft.skipped : null,
+      };
+    });
+  }
+
+  /**
    * Record the outcome of one transfer attempt and move the settlement to the
    * state that outcome implies.
    *
@@ -1230,9 +1494,19 @@ export class PartnerSettlementService {
       actorId: string;
       data: Prisma.PartnerSettlementUpdateManyMutationInput;
       event: string;
+      /** Runs first; throwing leaves the settlement as it was. */
+      guard?: (tx: Tx, settlement: { id: string; partnerId: string }) => Promise<void>;
     },
   ) {
     return this.prisma.$transaction(async (tx) => {
+      if (params.guard) {
+        const settlement = await tx.partnerSettlement.findUnique({
+          where: { id },
+          select: { id: true, partnerId: true, status: true },
+        });
+        if (!settlement) throw new NotFoundException('Settlement not found');
+        if (params.from.includes(settlement.status)) await params.guard(tx, settlement);
+      }
       const claimed = await tx.partnerSettlement.updateMany({
         where: { id, status: { in: params.from } },
         data: { ...params.data, status: params.to },

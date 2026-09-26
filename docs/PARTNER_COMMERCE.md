@@ -335,10 +335,25 @@ External cash/card is never posted, so it is never paid twice; sourcing
 price adjustments move only escrow and are released by `partner_order.completion`.
 
 **Disputes.** The hold is a deduction: while a dispute is open the frozen
-share is never payable. `createDraft` and `OrderDisputesService.open` take the
-same partner row lock, and `approve` refuses a settlement that claimed an
-order credit whose open dispute's hold it does not contain
-(`OPEN_DISPUTE_NOT_IN_SETTLEMENT`) — cancel and redraft.
+share is never payable. `createDraft`, `OrderDisputesService.open`, `approve`,
+`markPaymentPending`, `markPaid` and `revokeApproval` take the same partner row
+lock. A dispute opened once the order credit is in an APPROVED-or-later
+settlement freezes nothing (`openedAfterSettlement`), so the engine guards the
+settlement itself:
+
+| situation | rule |
+|---|---|
+| READY, dispute changed a claimed order credit | `approve` refuses (`OPEN_DISPUTE_NOT_IN_SETTLEMENT` / `DISPUTE_REFUND_NOT_IN_SETTLEMENT`) — cancel and draft through now |
+| APPROVED / PAYMENT_PENDING / FAILED, an OPEN order dispute whose hold is not in it (or none, opened after approval) | `markPaid` and `markPaymentPending` refuse `OPEN_DISPUTE_NOT_IN_SETTLEMENT`: nothing posted, status unchanged — wait for the decision |
+| decided for the partner | nothing blocks; the approved settlement is paid as it is |
+| decided for the customer / split, APPROVED and provably no transfer started | `markPaid` / `markPaymentPending` refuse `DISPUTE_REFUND_NOT_IN_SETTLEMENT`; `revokeApproval` → CANCELLED, claims released, redraft `periodStart` → now nets credit and refund |
+| decided for the customer, a transfer may have started (PAYMENT_PENDING, FAILED, REQUIRES_RECONCILIATION, any attempt / reference / paid posting / PAYMENT_PENDING ever recorded) | `revokeApproval` refuses `TRANSFER_MAY_HAVE_STARTED`, claims stay; the transfer / reconciliation lifecycle finishes it and the refund is debt netted by the next settlement |
+
+"Provably no transfer started" is checked on data: status APPROVED, no
+transfer attempt, no bank reference, no `partner.settlement.paid` posting,
+no `settlement.payment_pending` audit event. A refund counts as "not in the
+settlement" while its return is not written yet, waits on the desk (Q9), or
+has PARTNER_PAYABLE postings this settlement does not claim.
 
 **One cadence.** `Partner.settlementPeriodicity` (+ `settlementAnchorDay`) —
 DAILY (added), WEEKLY, BIWEEKLY, MONTHLY; bounds in `settlement-period.ts`

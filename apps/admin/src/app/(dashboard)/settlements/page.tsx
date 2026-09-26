@@ -2,16 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Badge,
-  Button,
-  EmptyState,
-  PageHeader,
-  Table,
-  Td,
-  Th,
-  Tr,
-} from '@tutak/design/web';
+import { Badge, Button, EmptyState, PageHeader, Table, Td, Th, Tr } from '@tutak/design/web';
 import {
   PartnerSettlementStatus,
   ReconciliationOutcome,
@@ -54,6 +45,7 @@ type Action =
   | 'failed'
   | 'ambiguous'
   | 'cancel'
+  | 'revoke-approval'
   | 'propose-moved'
   | 'propose-not-moved'
   | 'confirm';
@@ -61,7 +53,10 @@ type Action =
 const ACTIONS: Record<PartnerSettlementStatus, Action[]> = {
   [PartnerSettlementStatus.DRAFT]: ['ready', 'cancel'],
   [PartnerSettlementStatus.READY]: ['approve', 'cancel'],
-  [PartnerSettlementStatus.APPROVED]: ['payment-pending', 'cancel'],
+  // Not 'cancel': the server refuses to cancel an approved settlement. Before
+  // any transfer started, an approval can be revoked (claims released and
+  // redrafted through now) — for a dispute decided after approval.
+  [PartnerSettlementStatus.APPROVED]: ['payment-pending', 'revoke-approval'],
   [PartnerSettlementStatus.PAYMENT_PENDING]: ['paid', 'failed', 'ambiguous'],
   // PAID is immutable and REQUIRES_RECONCILIATION is resolved by the
   // two-person reconciliation flow, not by a status button here.
@@ -74,7 +69,11 @@ const ACTIONS: Record<PartnerSettlementStatus, Action[]> = {
    * not leave. Proposing an outcome and confirming it are two entries
    * because they are two acts by two different people.
    */
-  [PartnerSettlementStatus.REQUIRES_RECONCILIATION]: ['propose-moved', 'propose-not-moved', 'confirm'],
+  [PartnerSettlementStatus.REQUIRES_RECONCILIATION]: [
+    'propose-moved',
+    'propose-not-moved',
+    'confirm',
+  ],
   [PartnerSettlementStatus.CANCELLED]: [],
 };
 
@@ -86,6 +85,7 @@ const ACTION_LABEL: Record<Action, string> = {
   failed: 'Transfer bounced',
   ambiguous: 'Bank answer unclear',
   cancel: 'Cancel',
+  'revoke-approval': 'Revoke approval and redraft',
   'propose-moved': 'Propose: money did move',
   'propose-not-moved': 'Propose: money did not move',
   confirm: 'Confirm the proposal',
@@ -96,6 +96,7 @@ const NEEDS_REASON: Action[] = [
   'failed',
   'ambiguous',
   'cancel',
+  'revoke-approval',
   // A proposal about whether money moved is worthless without the evidence
   // it rests on — the server demands 3-1000 characters of it.
   'propose-moved',
@@ -198,6 +199,8 @@ export default function AdminSettlementsPage() {
           return settlementAdminApi.markAmbiguous(row.id, value);
         case 'cancel':
           return settlementAdminApi.cancel(row.id, value);
+        case 'revoke-approval':
+          return (await settlementAdminApi.revokeApproval(row.id, value)).revoked;
         case 'propose-moved':
           return settlementAdminApi.proposeReconciliation(
             row.id,
@@ -323,8 +326,8 @@ export default function AdminSettlementsPage() {
 
         {draft.isError ? (
           <p className="text-[12px] text-danger">
-            That period could not be drafted. It may overlap a settlement that already
-            claims those postings.
+            That period could not be drafted. It may overlap a settlement that already claims those
+            postings.
           </p>
         ) : null}
       </div>
@@ -386,9 +389,7 @@ export default function AdminSettlementsPage() {
                     )}
                     {ACTIONS[s.status].length === 0 ? (
                       <span className="text-[12px] text-faint">
-                        {s.status === PartnerSettlementStatus.PAID
-                          ? 'Paid and immutable'
-                          : '—'}
+                        {s.status === PartnerSettlementStatus.PAID ? 'Paid and immutable' : '—'}
                       </span>
                     ) : null}
                   </div>
@@ -416,9 +417,8 @@ export default function AdminSettlementsPage() {
           />
           {pending.action === 'paid' ? (
             <p className="text-[12px] text-faint">
-              This is the only action that posts to the ledger, and it is
-              irreversible — reversing a paid settlement is a refund, not an
-              edit. The reference must be the bank&apos;s own.
+              This is the only action that posts to the ledger, and it is irreversible — reversing a
+              paid settlement is a refund, not an edit. The reference must be the bank&apos;s own.
             </p>
           ) : null}
           <div className="flex gap-2">

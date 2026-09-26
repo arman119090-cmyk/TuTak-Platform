@@ -447,6 +447,21 @@ export const settlementAdminApi = {
     const { data } = await httpClient.post(`/admin/partner-settlements/${id}/cancel`, { reason });
     return data.data as PartnerSettlementDto;
   },
+
+  /**
+   * Revoke an approval before any transfer started: the claims are released
+   * and the partner is redrafted through now (null when nothing is payable).
+   */
+  async revokeApproval(id: string, reason: string) {
+    const { data } = await httpClient.post(`/admin/partner-settlements/${id}/revoke-approval`, {
+      reason,
+    });
+    return data.data as {
+      revoked: PartnerSettlementDto;
+      redraft: PartnerSettlementDto | null;
+      redraftSkipped: string | null;
+    };
+  },
 };
 
 /**

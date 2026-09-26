@@ -357,6 +357,47 @@ test('no input path → NOT_RUN; STATUSES is the closed list', async () => {
   );
 });
 
+test('temperature: 0.1 is sent by default; AI_REVIEW_TEMPERATURE="" omits the field (Moonshot fixes it server-side)', async () => {
+  const bodies = [];
+  const capture = async (url, init = {}) => {
+    if (String(url).startsWith('https://api.github.com/'))
+      return { ok: true, status: 200, json: async () => [] };
+    bodies.push(JSON.parse(init.body));
+    return okResponse('[]');
+  };
+  const s1 = scratch();
+  const d = await runReview({
+    env: envFor('deepseek', 'd', s1),
+    argv: [s1.diff],
+    fetchImpl: capture,
+    sleep: noSleep,
+    ...quiet,
+  });
+  assert.equal(d.status, 'REVIEW_COMPLETE');
+  assert.equal(bodies[0].temperature, 0.1, 'DeepSeek keeps the deterministic default');
+  assert.equal(bodies[0].max_tokens, 4000);
+  const s2 = scratch();
+  const k = await runReview({
+    env: envFor('kimi', 'k', s2, { AI_REVIEW_TEMPERATURE: '' }),
+    argv: [s2.diff],
+    fetchImpl: capture,
+    sleep: noSleep,
+    ...quiet,
+  });
+  assert.equal(k.status, 'REVIEW_COMPLETE');
+  assert.equal('temperature' in bodies[1], false, 'Kimi request carries no temperature field');
+  assert.equal(bodies[1].model, 'kimi-model');
+  const s3 = scratch();
+  await runReview({
+    env: envFor('kimi', 'k', s3, { AI_REVIEW_TEMPERATURE: '1' }),
+    argv: [s3.diff],
+    fetchImpl: capture,
+    sleep: noSleep,
+    ...quiet,
+  });
+  assert.equal(bodies[2].temperature, 1, 'an explicit value is sent as a number');
+});
+
 test('parseFindings normalises fields and rejects non-arrays', () => {
   assert.equal(parseFindings('no json here'), null);
   assert.equal(parseFindings('{"a":1}'), null);

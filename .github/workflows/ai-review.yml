@@ -77,6 +77,9 @@ jobs:
           AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
           AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
           AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
+          # Moonshot fixes the temperature per model (kimi-k3: 1.0) and rejects
+          # any explicit value with 400 — omit the field for Kimi only.
+          AI_REVIEW_TEMPERATURE: ''
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -145,6 +148,7 @@ jobs:
           AI_REVIEW_API_KEY: ${{ secrets.KIMI_API_KEY }}
           AI_REVIEW_BASE_URL: ${{ env.KIMI_BASE_URL }}
           AI_REVIEW_MODEL: ${{ env.KIMI_MODEL }}
+          AI_REVIEW_TEMPERATURE: ''
         run: node scripts/ai-review.mjs "${{ matrix.module }}"
       - name: DeepSeek
         id: deepseek

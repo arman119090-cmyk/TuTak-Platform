@@ -232,6 +232,14 @@ export async function runReview({
   const TIMEOUT_MS = Number(env.AI_REVIEW_TIMEOUT_MS ?? 180_000);
   const RETRIES = Number(env.AI_REVIEW_RETRIES ?? 2);
   const OUT_DIR = env.AI_REVIEW_OUT_DIR ?? 'ai-review-out';
+  // Sampling temperature sent to the model. Default 0.1 (deterministic
+  // review). Empty string = do not send the field at all: Moonshot's current
+  // models (kimi-k3, kimi-k2.7-code, kimi-k2.6) fix the temperature and
+  // answer 400 "invalid temperature: only 1 is allowed" to any explicit
+  // value — https://platform.kimi.ai/docs/api/models-overview.
+  const TEMPERATURE_RAW =
+    env.AI_REVIEW_TEMPERATURE === undefined ? '0.1' : env.AI_REVIEW_TEMPERATURE.trim();
+  const TEMPERATURE = TEMPERATURE_RAW === '' ? undefined : Number(TEMPERATURE_RAW);
   const label = labelOf(provider);
   const plog = (msg) => log(`[ai-review:${provider}] ${msg}`);
   const marker = `<!-- ai-review:${provider}:${mode} -->`;
@@ -352,7 +360,7 @@ export async function runReview({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model,
-          temperature: 0.1,
+          ...(TEMPERATURE === undefined ? {} : { temperature: TEMPERATURE }),
           max_tokens: MAX_OUTPUT_TOKENS,
           messages: [
             { role: 'system', content: system },

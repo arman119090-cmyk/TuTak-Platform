@@ -240,6 +240,11 @@ export async function runReview({
   const TEMPERATURE_RAW =
     env.AI_REVIEW_TEMPERATURE === undefined ? '0.1' : env.AI_REVIEW_TEMPERATURE.trim();
   const TEMPERATURE = TEMPERATURE_RAW === '' ? undefined : Number(TEMPERATURE_RAW);
+  // Optional top-level `reasoning_effort` (kimi-k3: low | high | max, default
+  // max — https://platform.kimi.ai/docs/guide/use-reasoning-effort). Sent only
+  // when set; at "max" a 33k-token diff reasoned for >5 minutes and the
+  // non-streaming request died on the 300 s header timeout of Node's fetch.
+  const REASONING_EFFORT = env.AI_REVIEW_REASONING_EFFORT?.trim() || undefined;
   const label = labelOf(provider);
   const plog = (msg) => log(`[ai-review:${provider}] ${msg}`);
   const marker = `<!-- ai-review:${provider}:${mode} -->`;
@@ -361,6 +366,7 @@ export async function runReview({
         body: JSON.stringify({
           model,
           ...(TEMPERATURE === undefined ? {} : { temperature: TEMPERATURE }),
+          ...(REASONING_EFFORT === undefined ? {} : { reasoning_effort: REASONING_EFFORT }),
           max_tokens: MAX_OUTPUT_TOKENS,
           messages: [
             { role: 'system', content: system },

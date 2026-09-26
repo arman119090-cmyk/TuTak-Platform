@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { CommissionDistributionModule } from '../commission-distribution/commission-distribution.module';
 import { LedgerModule } from '../ledger/ledger.module';
 import { MediaModule } from '../media/media.module';
 import { PartnersModule } from '../partners/partners.module';
@@ -11,7 +12,7 @@ import { PurchaseIntentsController } from './purchase-intents.controller';
 import { PurchaseIntentsService } from './purchase-intents.service';
 
 @Module({
-  imports: [AuditModule, LedgerModule, MediaModule, PartnersModule, ReferralModule, TransactionsModule, WalletModule],
+  imports: [AuditModule, CommissionDistributionModule, LedgerModule, MediaModule, PartnersModule, ReferralModule, TransactionsModule, WalletModule],
   controllers: [PurchaseIntentsController],
   providers: [PurchaseIntentsService, PurchaseIntentRefundService],
   exports: [PurchaseIntentsService, PurchaseIntentRefundService],

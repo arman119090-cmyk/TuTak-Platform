@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import {
   AuditAction,
-  BonusEntryType,
   LedgerAccountType,
   PostingDirection,
   Prisma,
@@ -16,16 +15,14 @@ import {
   parseMoney,
   parsePositiveMoney,
   roundCharge,
-  roundIssued,
 } from '../../common/utils/money';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CommissionDistributionService } from '../commission-distribution/commission-distribution.service';
 import { MediaViewService } from '../media/media-view.service';
 import { BonusEngineService } from '../wallet/bonus-engine.service';
-import { DeferredBonusLotService } from '../wallet/deferred-bonus-lot.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { PartnersService } from '../partners/partners.service';
-import { CURRENT_REFERRAL_PROGRAM_VERSION, ReferralChainLevel, ReferralService } from '../referral/referral.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { WalletService } from '../wallet/wallet.service';
 import { CreatePurchaseIntentDto } from './dto/create-purchase-intent.dto';
@@ -77,9 +74,8 @@ export class PurchaseIntentsService {
     private readonly walletService: WalletService,
     private readonly partnersService: PartnersService,
     private readonly transactionsService: TransactionsService,
-    private readonly referralService: ReferralService,
-    private readonly deferredBonusLots: DeferredBonusLotService,
     private readonly ledger: LedgerService,
+    private readonly distribution: CommissionDistributionService,
     private readonly auditService: AuditService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly media: MediaViewService,
@@ -470,23 +466,14 @@ export class PurchaseIntentsService {
     staffUserId: string,
   ): Promise<'settled' | 'already-resolved'> {
     // Spec §12: the pool is gross × the *snapshotted* negotiated rate — not
-    // whatever the partner's rate is today. Rounded down to the column's own
-    // 4-decimal-place precision up front, not left as a raw product.
-    const pool = roundIssued(intent.grossAmount.times(intent.negotiatedRateBps).dividedBy(10_000));
-
-    // Read-only, and safe to resolve before the transaction: attribution is
-    // immutable once created (spec §5) at every level, so the chain cannot
-    // change between this read and the transaction below using it. The
-    // 2026-08-22 3-level rework's own single source of truth for the split —
-    // see `ReferralService.computePoolSplit`'s docblock for why `tutak` is
-    // always the residual, never independently rounded, so all six legs
-    // always sum to exactly `pool`.
-    const chain = await this.referralService.resolveReferralChain(intent.customerId);
-    const split = this.referralService.computePoolSplit(pool, chain);
-    const { green, deferred, l1, l2, l3, tutak } = split;
-    const l1Entry = chain.find((c) => c.level === 1) ?? null;
-    const l2Entry = chain.find((c) => c.level === 2) ?? null;
-    const l3Entry = chain.find((c) => c.level === 3) ?? null;
+    // whatever the partner's rate is today. Read-only, and safe to resolve
+    // before the transaction: attribution is immutable once created (spec
+    // §5) at every level, so the chain cannot change between this read and
+    // the transaction below using it. The split itself — and every effect
+    // it has — now lives in `CommissionDistributionService`, shared with
+    // online partner orders so the two flows cannot drift apart; moved
+    // there verbatim (same order, same rounding, same ledger shape).
+    const split = await this.distribution.plan(intent.customerId, intent.grossAmount, intent.negotiatedRateBps);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -510,24 +497,8 @@ export class PurchaseIntentsService {
             // explicit, persisted eligibility boundary — every purchase
             // confirmed from here on is THREE_LEVEL_V2, and its own
             // per-level referrer snapshot lives in `referrer1..3*`/
-            // `tutakAmount` below, never the legacy `referrerAmount` column.
-            poolAmount: pool,
-            greenAmount: green,
-            deferredAmount: deferred,
-            programVersion: CURRENT_REFERRAL_PROGRAM_VERSION,
-            referrer1Type: l1Entry?.type ?? null,
-            referrer1UserId: l1Entry?.type === 'USER' ? l1Entry.userId : null,
-            referrer1PartnerId: l1Entry?.type === 'PARTNER' ? l1Entry.partnerId : null,
-            referrer1Amount: l1,
-            referrer2Type: l2Entry?.type ?? null,
-            referrer2UserId: l2Entry?.type === 'USER' ? l2Entry.userId : null,
-            referrer2PartnerId: l2Entry?.type === 'PARTNER' ? l2Entry.partnerId : null,
-            referrer2Amount: l2,
-            referrer3Type: l3Entry?.type ?? null,
-            referrer3UserId: l3Entry?.type === 'USER' ? l3Entry.userId : null,
-            referrer3PartnerId: l3Entry?.type === 'PARTNER' ? l3Entry.partnerId : null,
-            referrer3Amount: l3,
-            tutakAmount: tutak,
+            // `tutakAmount`, never the legacy `referrerAmount` column.
+            ...this.distribution.snapshotOf(split),
           },
         });
         if (claimed.count === 0) return 'already-resolved' as const;
@@ -537,48 +508,20 @@ export class PurchaseIntentsService {
         }
         await this.transactionsService.markCompleted(intent.sourceTransactionId!, {}, tx);
 
-        if (green.greaterThan(0)) {
-          const wallet = await tx.wallet.findUniqueOrThrow({ where: { userId: intent.customerId } });
-          await this.bonusEngine.accrue(
-            {
-              walletId: wallet.id,
-              type: BonusEntryType.ACCRUAL_PURCHASE,
-              amount: green,
-              sourceTransactionId: intent.sourceTransactionId!,
-              pendingHours: 0,
-            },
-            tx,
-          );
-        }
-
-        // Spec §15: existing lots first, then this purchase's own new lot —
-        // never the other order.
-        await this.deferredBonusLots.advanceExistingLots(
-          intent.customerId,
-          intent.grossAmount,
-          intent.sourceTransactionId!,
+        // Green accrual, deferred-lot progress then this purchase's own new
+        // lot, every USER-type referral level's share, and the balanced
+        // contribution posting — see `CommissionDistributionService.apply`.
+        await this.distribution.apply(
+          split,
+          {
+            customerId: intent.customerId,
+            partnerId: intent.partnerId,
+            turnoverAmount: intent.grossAmount,
+            sourceTransactionId: intent.sourceTransactionId!,
+            ledgerSource: { sourceType: 'PurchaseIntent', sourceId: intent.id },
+          },
           tx,
         );
-        if (deferred.greaterThan(0)) {
-          await this.deferredBonusLots.createLot(
-            intent.customerId,
-            deferred,
-            intent.sourceTransactionId!,
-            tx,
-          );
-        }
-
-        // Every USER-type level (L1/L2/L3) is credited straight into its
-        // wallet; a PARTNER-type level is deliberately skipped here — its
-        // share is the ledger-only leg `postContributionLedger` posts below.
-        await this.referralService.creditChainShares(
-          chain,
-          { l1, l2, l3 },
-          intent.sourceTransactionId!,
-          tx,
-        );
-
-        await this.postContributionLedger(intent, { pool, green, deferred, l1, l2, l3, tutak, chain }, tx);
 
         if (intent.bonusAmountRequested.greaterThan(0)) {
           await this.postRedemptionCompensation(intent, tx);
@@ -595,101 +538,6 @@ export class PurchaseIntentsService {
       this.logger.error(`Purchase intent ${intent.id} settlement failed and was rolled back: ${err}`);
       throw err;
     }
-  }
-
-  /**
-   * Spec §12 + §22-24: the full contribution pool, split by who receives
-   * each slice, as one balanced double-entry transaction. See the migration
-   * doc §3 for why this is one `LedgerService.post()` call rather than
-   * being split across the referral module — the referrer legs have to
-   * balance against the same purchase's contribution posting.
-   *
-   * 2026-08-22 3-level rework: up to three referrer legs now, not one. A
-   * USER-type level's share is folded into the same `bonusLiabilityAccount`
-   * credit as green/deferred (it is spendable wallet value, same as
-   * before); a PARTNER-type level gets its own `PARTNER_PAYABLE` credit,
-   * one per distinct partner in the chain (at most one, in practice — a
-   * partner referrer never continues the chain, so the chain can contain at
-   * most one PARTNER entry, always its own terminal level). `tutak` is
-   * already the pool's residual (`ReferralService.computePoolSplit`), so it
-   * needs no further adjustment for missing levels the way the old
-   * single-referrer code needed `.plus(referrer ? 0 : referrerShare)`.
-   */
-  private async postContributionLedger(
-    intent: { id: string; partnerId: string; sourceTransactionId: string | null },
-    amounts: {
-      pool: Decimal;
-      green: Decimal;
-      deferred: Decimal;
-      l1: Decimal;
-      l2: Decimal;
-      l3: Decimal;
-      tutak: Decimal;
-      chain: ReferralChainLevel[];
-    },
-    tx: Tx,
-  ): Promise<void> {
-    if (amounts.pool.lessThanOrEqualTo(0)) return;
-
-    // Deliberately *not* passing `tx` to any `accountFor` call below — same
-    // as this method always did, and same as the sibling
-    // `postRedemptionCompensation` still does: `settlePurchase`'s own
-    // transaction is Read Committed (not Serializable), so a find/create
-    // outside it commits immediately and is visible to the next statement
-    // either way (see `LedgerService.accountFor`'s own docblock on this).
-    // Passing `tx` here once caused a same-process self-deadlock instead: an
-    // account created *inside* this still-open transaction is invisible to
-    // `postRedemptionCompensation`'s own (tx-less) lookup moments later,
-    // whose insert then blocks on this transaction's own uncommitted row —
-    // a lock wait this transaction can never resolve because it is itself
-    // waiting on that query to return. Caught by the integration suite
-    // timing out at Prisma's 5s interactive-transaction default.
-    const [partnerAccount, bonusLiabilityAccount, revenueAccount] = await Promise.all([
-      this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: intent.partnerId }),
-      this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-      this.ledger.accountFor({ type: LedgerAccountType.PLATFORM_REVENUE }),
-    ]);
-
-    const byLevel: Record<1 | 2 | 3, Decimal> = { 1: amounts.l1, 2: amounts.l2, 3: amounts.l3 };
-    const userLiability = amounts.chain
-      .filter((c) => c.type === 'USER')
-      .reduce((sum, c) => sum.plus(byLevel[c.level]), new Decimal(0));
-    const customerLiability = amounts.green.plus(amounts.deferred).plus(userLiability);
-
-    const partnerReferrerPostings = await Promise.all(
-      amounts.chain
-        .filter((c): c is ReferralChainLevel & { type: 'PARTNER' } => c.type === 'PARTNER')
-        .map(async (c) => {
-          const share = byLevel[c.level];
-          if (share.lessThanOrEqualTo(0)) return null;
-          const account = await this.ledger.accountFor({
-            type: LedgerAccountType.PARTNER_PAYABLE,
-            partnerId: c.partnerId,
-          });
-          return { accountId: account.id, direction: PostingDirection.CREDIT, amount: share };
-        }),
-    );
-
-    const postings = [
-      { accountId: partnerAccount.id, direction: PostingDirection.DEBIT, amount: amounts.pool },
-      ...(customerLiability.greaterThan(0)
-        ? [{ accountId: bonusLiabilityAccount.id, direction: PostingDirection.CREDIT, amount: customerLiability }]
-        : []),
-      ...partnerReferrerPostings.filter((p): p is NonNullable<typeof p> => p !== null),
-      ...(amounts.tutak.greaterThan(0)
-        ? [{ accountId: revenueAccount.id, direction: PostingDirection.CREDIT, amount: amounts.tutak }]
-        : []),
-    ];
-
-    await this.ledger.post(
-      {
-        kind: 'partner.contribution',
-        sourceType: 'PurchaseIntent',
-        sourceId: intent.id,
-        postings,
-      },
-      tx,
-    );
   }
 
   /**

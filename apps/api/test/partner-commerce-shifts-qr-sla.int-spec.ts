@@ -27,7 +27,14 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
   let branchStaff: PartnerBranchStaffService;
   let s: ReturnType<typeof commerceSupport>;
 
+  const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+
   beforeAll(async () => {
+    // Real TuTak money reaches these customers through the real top-up flow,
+    // which is off by default since 15.09.2026 (deposit-taking is an open
+    // legal question). Set before the harness boots — config reads the env
+    // at boot — and restored in afterAll, exactly as customer-balance does.
+    process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = 'true';
     harness = await createTestHarness();
     prisma = harness.prisma;
     orders = harness.app.get(PartnerOrdersService);
@@ -41,6 +48,8 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
   });
 
   afterAll(async () => {
+    if (savedTopUpFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedTopUpFlag;
     await harness.close();
   });
 
@@ -150,10 +159,12 @@ describe('Partner Commerce — shifts, offline QR split, SLA (integration)', () 
       const cashier = people[0]!;
       const assignment = await prisma.partnerBranchStaffAssignment.findFirstOrThrow({ where: { userId: cashier.id } });
       await shifts.start(cashier.id, branch.id);
-      const customer = await s.customer();
+      // Two customers: one live purchase per customer per business (main,
+      // `purchase_intents_one_live_per_customer_partner`).
+      const [first, second] = [await s.customer(), await s.customer()];
       const intents2 = await Promise.all([
-        intents.create({ partnerId: partner.id, partnerBranchId: branch.id, grossAmount: '1000' }, customer.user.id),
-        intents.create({ partnerId: partner.id, partnerBranchId: branch.id, grossAmount: '2000' }, customer.user.id),
+        intents.create({ partnerId: partner.id, partnerBranchId: branch.id, grossAmount: '1000' }, first.user.id),
+        intents.create({ partnerId: partner.id, partnerBranchId: branch.id, grossAmount: '2000' }, second.user.id),
       ]);
       const [confirmation] = await Promise.allSettled([
         intents.confirm(intents2[0].id, cashier.id),

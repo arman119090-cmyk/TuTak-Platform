@@ -20,12 +20,19 @@ describe('Partner Commerce over HTTP (e2e, real auth guards)', () => {
   let prisma: PrismaClient;
   const jwt = new JwtService({ secret: process.env.JWT_ACCESS_SECRET });
 
+  const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+
   beforeAll(async () => {
+    // Real TuTak money arrives through the real top-up flow, off by default
+    // since 15.09.2026; set before boot (config reads the env at boot).
+    process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = 'true';
     harness = await createHttpTestHarness({ authGuards: true, rbacGuards: true });
     prisma = harness.prisma;
   });
 
   afterAll(async () => {
+    if (savedTopUpFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedTopUpFlag;
     await harness.close();
   });
 

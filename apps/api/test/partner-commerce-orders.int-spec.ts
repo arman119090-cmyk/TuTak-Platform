@@ -25,7 +25,14 @@ describe('Partner Commerce — online orders (integration)', () => {
   let cancellations: PartnerOrderCancellationService;
   let s: ReturnType<typeof commerceSupport>;
 
+  const savedTopUpFlag = process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+
   beforeAll(async () => {
+    // Real TuTak money reaches these customers through the real top-up flow,
+    // which is off by default since 15.09.2026 (deposit-taking is an open
+    // legal question). Set before the harness boots — config reads the env
+    // at boot — and restored in afterAll, exactly as customer-balance does.
+    process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = 'true';
     harness = await createTestHarness();
     prisma = harness.prisma;
     orders = harness.app.get(PartnerOrdersService);
@@ -37,6 +44,8 @@ describe('Partner Commerce — online orders (integration)', () => {
   });
 
   afterAll(async () => {
+    if (savedTopUpFlag === undefined) delete process.env.CUSTOMER_PREPAID_TOPUP_ENABLED;
+    else process.env.CUSTOMER_PREPAID_TOPUP_ENABLED = savedTopUpFlag;
     await harness.close();
   });
 

@@ -343,8 +343,10 @@ export class BonusEngineService {
           },
         });
         const [liability, payable] = await Promise.all([
-          this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }),
-          this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: current.beneficiaryPartnerId }),
+          // Same client as every other write here — a tx-less lookup would wait
+          // on an account this transaction may have just created.
+          this.ledger.accountFor({ type: LedgerAccountType.BONUS_LIABILITY }, client),
+          this.ledger.accountFor({ type: LedgerAccountType.PARTNER_PAYABLE, partnerId: current.beneficiaryPartnerId }, client),
         ]);
         const posted = await this.ledger.post(
           {
